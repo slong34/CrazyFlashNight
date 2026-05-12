@@ -1,0 +1,185 @@
+name: Build Playable Package
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 90
+
+    env:
+      BUILD_ROOT: ${{ github.workspace }}
+      ARTIFACT_DIR: ${{ github.workspace }}\CF7ME-playable
+      PUBLISH_DIR: ${{ github.workspace }}\CF7ME-publish
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Enable UTF-8 console
+        shell: powershell
+        run: |
+          chcp.com 65001 | Out-Null
+          [Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false)
+          [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+          $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Verify required tools
+        shell: powershell
+        run: |
+          chcp.com 65001 | Out-Null
+          Write-Host "PowerShell: $($PSVersionTable.PSVersion)"
+          node --version
+          npm --version
+          cargo --version
+          rustc --version
+
+      - name: Build launcher
+        shell: powershell
+        run: |
+          chcp.com 65001 | Out-Null
+          powershell -ExecutionPolicy Bypass -File launcher/build.ps1
+
+      - name: Prepare playable package
+        shell: powershell
+        run: |
+          chcp.com 65001 | Out-Null
+
+          $ErrorActionPreference = "Stop"
+
+          $repoRoot = $env:BUILD_ROOT
+          $artifact = $env:ARTIFACT_DIR
+
+          if (Test-Path $artifact) {
+            Remove-Item $artifact -Recurse -Force
+          }
+          New-Item -ItemType Directory -Force $artifact | Out-Null
+
+          function Copy-IfExists {
+            param(
+              [Parameter(Mandatory = $true)][string]$Source,
+              [Parameter(Mandatory = $true)][string]$Destination
+            )
+            if (Test-Path $Source) {
+              $parent = Split-Path -Parent $Destination
+              if ($parent -and -not (Test-Path $parent)) {
+                New-Item -ItemType Directory -Force $parent | Out-Null
+              }
+              Copy-Item $Source $Destination -Recurse -Force
+            } else {
+              Write-Host "[WARN] Missing: $Source"
+            }
+          }
+
+          # 主程序与原生/托管依赖
+          $rootFiles = @(
+            "CRAZYFLASHER7MercenaryEmpire.exe",
+            "CRAZYFLASHER7MercenaryEmpire.exe.config",
+            "ClearScript.Core.dll",
+            "ClearScript.V8.dll",
+            "ClearScript.V8.ICUData.dll",
+            "ClearScriptV8.win-x64.dll",
+            "Newtonsoft.Json.dll",
+            "SharpDX.dll",
+            "SharpDX.DXGI.dll",
+            "SharpDX.Direct3D11.dll",
+            "SharpDX.D3DCompiler.dll",
+            "Microsoft.Web.WebView2.Core.dll",
+            "Microsoft.Web.WebView2.WinForms.dll",
+            "WebView2Loader.dll",
+            "miniaudio.dll",
+            "sol_parser.dll",
+            "hotkey_guard.exe",
+            "config.toml",
+            "config.xml",
+            "crossdomain.xml",
+            "Adobe Flash Player 20.exe",
+            "CRAZYFLASHER7MercenaryEmpire.swf"
+          )
+
+          foreach ($f in $rootFiles) {
+            Copy-IfExists -Source (Join-Path $repoRoot $f) -Destination (Join-Path $artifact $f)
+          }
+
+          # 运行资源目录
+          $dirsToCopy = @(
+            "launcher\web",
+            "launcher\data",
+            "data",
+            "config",
+            "music",
+            "sounds",
+            "fscommand",
+            "flashswf",
+            "scripts\dist"
+          )
+
+          foreach ($d in $dirsToCopy) {
+            $src = Join-Path $repoRoot $d
+            $dst = Join-Path $artifact $d
+            if (Test-Path $src) {
+              Copy-Item $src $dst -Recurse -Force
+            } else {
+              Write-Host "[WARN] Missing dir: $src"
+            }
+          }
+
+          # 常见运行目录辅助文件
+          $extraFiles = @(
+            "README.md",
+            "AGENTS.md",
+            "LICENSE"
+          )
+          foreach ($f in $extraFiles) {
+            Copy-IfExists -Source (Join-Path $repoRoot $f) -Destination (Join-Path $artifact $f)
+          }
+
+          # 记录构建信息
+          @"
+          repository=${{ github.repository }}
+          sha=${{ github.sha }}
+          ref=${{ github.ref }}
+          run_id=${{ github.run_id }}
+          run_number=${{ github.run_number }}
+          generated_at=$(Get-Date -Format o)
+          "@ | Set-Content -Encoding UTF8 (Join-Path $artifact "build-info.txt")
+
+      - name: Create zip package
+        shell: powershell
+        run: |
+          chcp.com 65001 | Out-Null
+          $ErrorActionPreference = "Stop"
+
+          $zipPath = Join-Path $env:BUILD_ROOT "CF7ME-playable.zip"
+          if (Test-Path $zipPath) {
+            Remove-Item $zipPath -Force
+          }
+
+          Compress-Archive -Path "$env:ARTIFACT_DIR\*" -DestinationPath $zipPath -Force
+
+          Write-Host "Created: $zipPath"
+
+      - name: Upload playable artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: CF7ME-playable-${{ github.run_number }}
+          path: CF7ME-playable.zip
+          if-no-files-found: error
+          retention-days: 14
