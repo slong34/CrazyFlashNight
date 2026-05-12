@@ -472,7 +472,8 @@ launcher/
 - **MSBuild**：`C:\Windows\Microsoft.NET\Framework64\v4.0.30319\msbuild.exe`（系统自带）
 - **MSVC C 编译器**（cl.exe，用于编 miniaudio.dll）：VS 2022 Build Tools 或任意 VS 版本
   - 安装：`winget install Microsoft.VisualStudio.2022.BuildTools --override "--add Microsoft.VisualStudio.Component.VC.Tools.x86.x64 --add Microsoft.VisualStudio.Component.Windows11SDK.22621"`
-  - native/build.bat 自动探测 vcvars64.bat
+  - `native/build.bat` 会优先扫描常见 `vcvars64.bat` 路径（BuildTools/Community/Professional/Enterprise），并用 `vswhere` 做兜底发现
+  - GitHub Actions (`windows-2022`) 会先用 `ilammy/msvc-dev-cmd@v1` 预置 MSVC x64 环境，再进入 `launcher/build.ps1`
 - **Rust 工具链**（用于编 sol_parser.dll）：`rustup-init.exe` → stable-x86_64-pc-windows-msvc
   - 安装：https://rustup.rs/
   - native/sol_parser/build.bat 要求 `cargo` 在 PATH 里
