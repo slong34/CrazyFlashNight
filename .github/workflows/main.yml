@@ -37,6 +37,7 @@ jobs:
         with:
           node-version: 20
           cache: npm
+          cache-dependency-path: launcher/scripts/package-lock.json
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -122,13 +123,13 @@ jobs:
           $dirsToCopy = @(
             "launcher\web",
             "launcher\data",
+            "launcher\scripts\dist",
             "data",
             "config",
             "music",
             "sounds",
             "fscommand",
-            "flashswf",
-            "scripts\dist"
+            "flashswf"
           )
 
           foreach ($d in $dirsToCopy) {
